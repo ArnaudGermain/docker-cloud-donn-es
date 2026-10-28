@@ -1,0 +1,29 @@
+name: docker-cloud
+services:
+  back:
+    image: docker-cloud-back:initial
+    build:
+      context: .
+      dockerfile: Dockerfile.back
+    environment:
+      HELLO_MESSAGE: Bonjour depuis mon cloud Docker !
+
+  front:
+    image: docker-cloud-front:initial
+    build:
+      context: .
+      dockerfile: Dockerfile.front
+
+  web:
+    image: docker-cloud-web:initial
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    environment:
+      FRONT_URL: http://front:8080
+      BACK_URL: http://back:8080
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      - front
+      - back

@@ -1,0 +1,8 @@
+FROM cgr.dev/chainguard/node:latest@sha256:1ae8ed719c65888716078a52ce2166767e091f0b1072a79f6b42becba6e1ad44
+WORKDIR /app
+COPY shared ./shared
+COPY back ./back
+USER 65532:65532
+EXPOSE 8080
+ENTRYPOINT ["/usr/bin/node"]
+CMD ["back/server.js"]
