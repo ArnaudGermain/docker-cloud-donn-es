@@ -1,16 +1,13 @@
-# Validation JavaScript — 6 octobre 2026
+# Validation — 29 octobre 2026
 
-Le script `sh scripts/smoke.sh` a terminé avec succès sur Docker Desktop :
+Exécutée sur Docker Desktop avec deux projets isolés, sans utiliser le volume de démonstration :
 
-- Configuration Compose valide et trois images Node construites depuis Chainguard, base figée par digest.
-- Démarrage dans l’ordre back → front → web, chacun déclaré healthy.
-- Page HTML servie par front à travers web : HTTP 200 et contenu attendu.
-- API `/api/hello` à travers web : HTTP 200 et JSON valide.
-- Inspection Docker : plafonds mémoire et CPU non nuls sur les trois services.
-- Arrêt par Compose : code 0 et log « Arrêt terminé » pour chacun des trois services Node.
+- `docker compose config --quiet`, `git diff --check` et vérification syntaxique des scripts JavaScript : réussis.
+- Stack `chantier-integration` sur 18080 : les trois images construites, services healthy.
+- `scripts/test-notes.py` : création, lecture, modification, suppression ; rejet des champs vides, statuts inconnus, description trop longue, JSON invalide et corps supérieur à 16 Kio.
+- Cinq créations concurrentes : aucune note perdue.
+- Suppression et recréation des conteneurs en conservant le volume : six notes retrouvées avec leurs modifications. Nettoyage des notes de test par l’API après vérification.
+- Stack `chantier-smoke` sur 18081, `scripts/smoke.sh` : HTML et API via proxy, limites CPU/RAM, healthchecks et SIGTERM validés ; sortie 0 des trois services et logs d’arrêt présents.
+- Navigateur : création d’une note depuis le formulaire, modification du statut vers Terminé et filtrage À faire vérifiés. Aucun test de charge soutenue ni test sur appareil mobile physique n’a été effectué.
 
-Les conteneurs ont été laissés arrêtés. Les images finales ont été reconstruites après retrait de fichiers Dockerfile dupliqués sans usage. Les trois images JavaScript sont exportées dans `../docker-cloud-images.tar`.
-
-La vérification HTTP utilise curl ; le clic dans un navigateur et un test de charge ne font pas partie de cette validation. Les images exportées ciblent la plateforme native de construction ; reconstruire sur une autre architecture si nécessaire.
-
-Le dépôt Git distant et son URL de remise restent à créer sur le compte de l’étudiant.
+Les seules notes utilisées sont des données fictives de test. La sauvegarde JSON vise un back unique ; pas d’écriture partagée entre plusieurs réplicas. L’application est une démonstration locale sans authentification.

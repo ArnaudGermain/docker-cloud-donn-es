@@ -5,7 +5,7 @@ docker compose config --quiet
 trap 'docker compose stop' EXIT
 docker compose up --build -d --wait
 port="$(docker compose port web 8080)"
-curl -fsS "http://$port/" | python3 -c 'import sys; assert "Mon Docker Cloud" in sys.stdin.read()'
+curl -fsS "http://$port/" | python3 -c 'import sys; assert "Carnet de chantier" in sys.stdin.read()'
 curl -fsS "http://$port/api/hello" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["service"]=="back" and d["message"]'
 for service in front back web; do
  id="$(docker compose ps -q "$service")"

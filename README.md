@@ -1,4 +1,4 @@
-# Projet — Docker Cloud en JavaScript
+# Carnet de chantier — Docker Cloud en JavaScript
 
 Trois images personnalisées : **front** (page HTML et JavaScript), **back** (API JSON) et **web** (reverse proxy). Les trois serveurs sont écrits en JavaScript et exécutés par Node.js. Aucun téléchargement depuis Docker Hub.
 
@@ -12,7 +12,7 @@ docker compose config --quiet
 docker compose up --build -d --wait
 ```
 
-Ouvrir http://localhost:8080 puis cliquer sur le bouton. `HTTP_PORT` et `HELLO_MESSAGE` sont personnalisables dans `.env`. Relancer `docker compose up -d` après une modification.
+Ouvrir http://localhost:8080 pour créer, modifier et supprimer les notes. `HTTP_PORT` et `MAX_NOTES` sont personnalisables dans `.env`. Relancer `docker compose up -d` après une modification.
 
 ```sh
 curl -f http://localhost:8080/api/hello
@@ -60,7 +60,7 @@ Aucun module tiers npm n’est nécessaire. Les scripts CommonJS sont lancés di
 | `ENTRYPOINT ["/usr/bin/node"]` | Forme exec : Node est PID 1, reçoit directement les signaux |
 | `CMD` | Options Node, chemin du script et argument de port par défaut |
 
-Aucun processus enfant n’est lancé, donc aucun init ni shell intermédiaire n’est requis. Aucun fichier n’est écrit au run : `read_only` est possible. Le port 8080 est non privilégié. Les logs utilisent stdout et stderr.
+Aucun processus enfant n’est lancé, donc aucun init ni shell intermédiaire n’est requis. Le back écrit uniquement dans le volume `/data` ; le reste du système de fichiers reste en lecture seule. Le port 8080 est non privilégié. Les logs utilisent stdout et stderr.
 
 ## Arguments au run et traduction Compose
 
@@ -72,7 +72,7 @@ Les options Node précèdent le nom du script. Les arguments applicatifs le suiv
 | `--v8-pool-size=1` | Pool de threads auxiliaires V8 ; ne plafonne ni tous les threads ni le temps CPU, dans `command` |
 | `front/server.js`, `back/server.js`, `web/server.js` | Programme propre à chaque service, dans `command` |
 | `--port=8080` | Port applicatif validé par le script partagé, dans `command` |
-| `HELLO_MESSAGE` | Message de l’API, `environment` du back |
+| `NOTES_FILE`, `MAX_NOTES` | Fichier de sauvegarde et nombre maximal de notes, `environment` du back |
 | `FRONT_URL`, `BACK_URL` | Destinations HTTP, `environment` du web |
 | `HTTP_PORT` | Interpolation Compose du port hôte, pas une variable Node |
 
@@ -96,7 +96,7 @@ docker run --rm --name front-demo --memory=128m --cpus=0.25 --pids-limit=64 --re
 
 `depends_on` avec `service_healthy` attend back avant front, puis les deux avant web. `shared/healthcheck.js` lance Node et appelle `/healthz` sur localhost : sortie 0 si HTTP 200, sinon 1. Aucun curl ni shell n’est utilisé dans les images. Sonde toutes les 5 s, timeout Compose 3 s, timeout HTTP 2 s, 5 tentatives, période initiale 5 s. La sonde web indique sa disponibilité locale, sans tester les amonts.
 
-Les dépendances contrôlent le démarrage, pas une supervision continue. Si un amont tombe, web renvoie 502 ; les requêtes amont ont un timeout de 5 s. `restart: unless-stopped` relance un processus arrêté, pas un conteneur simplement unhealthy. `read_only`, `cap_drop: [ALL]` et `no-new-privileges` réduisent les privilèges. Pas de volumes : aucune donnée persistante n’est stockée. Ce TP ne fournit ni stockage, ni comptes, ni terminaison TLS.
+Les dépendances contrôlent le démarrage, pas une supervision continue. Si un amont tombe, web renvoie 502 ; les requêtes amont ont un timeout de 5 s. `restart: unless-stopped` relance un processus arrêté, pas un conteneur simplement unhealthy. `read_only`, `cap_drop: [ALL]` et `no-new-privileges` réduisent les privilèges. Le volume `notes-data` conserve les notes. Cette démonstration locale ne fournit pas de comptes ni de terminaison TLS.
 
 ## SIGTERM et arrêt propre
 
@@ -163,3 +163,34 @@ Une VM embarque un OS invité et son noyau. Les conteneurs Linux partagent le no
 - [Options Node et mémoire V8](https://nodejs.org/api/cli.html)
 - [Ordre de démarrage Compose](https://docs.docker.com/compose/how-tos/startup-order/)
 - [Paramètres des services Compose](https://docs.docker.com/reference/compose-file/services/)
+
+
+## Application de notes de chantier
+
+Interface adaptée au mobile : chantier, zone, description et statut (« À faire », « En cours », « Terminé »). L’utilisateur peut créer, modifier, supprimer et filtrer les notes. Les dates de création et de modification sont enregistrées. Les textes sont affichés avec `textContent`, sans interpréter le HTML fourni par un utilisateur.
+
+| Route | Action |
+|---|---|
+| `GET /api/notes` | Liste des notes |
+| `POST /api/notes` | Création, HTTP 201 |
+| `PUT /api/notes/:id` | Modification complète |
+| `DELETE /api/notes/:id` | Suppression, HTTP 204 |
+
+Chantier et zone : 1 à 100 caractères ; description : 1 à 2000. Le back vérifie les statuts, limite le corps JSON à 16 Kio et refuse les requêtes invalides. `MAX_NOTES` vaut 1000 par défaut. Les IDs sont des UUID générés par `node:crypto`. `node:fs` et `node:path` sont également utilisés par le back pour le stockage ; aucune dépendance npm ajoutée.
+
+`NOTES_FILE=/data/notes.json` désigne le fichier dans le volume nommé `notes-data`. Le Dockerfile du back copie le dossier vide `back/data` avec le propriétaire 65532 ; Docker initialise ainsi les droits du volume neuf pour l’utilisateur non root, sans installation de paquet ni commande chown au run. Le montage du volume reste accessible en écriture malgré `read_only: true`.
+
+Les sauvegardes passent par un fichier temporaire puis un renommage atomique. Les écritures synchrones sont sérialisées dans le processus Node ; les requêtes simultanées ne doivent pas écraser les créations précédentes. Cette conception cible une seule instance du back, sans partage du JSON entre plusieurs réplicas. Un JSON corrompu fait échouer le démarrage au lieu d’effacer les données. Pour sauvegarder les données, copier le volume à l’arrêt. `docker compose down` conserve les notes ; **`docker compose down -v` les supprime**.
+
+### Test isolé de l’application
+
+Ces commandes utilisent un projet et un port distincts de la démonstration et ne touchent pas ses notes. Le test attend un volume de test neuf. Ne supprimer un volume de test existant que si ses données sont jetables.
+
+```sh
+HTTP_PORT=18080 docker compose -p chantier-integration up --build -d --wait
+HTTP_PORT=18080 python3 scripts/test-notes.py
+# Arrêter les seuls conteneurs de test après vérification :
+docker compose -p chantier-integration down
+```
+
+Le test vérifie CRUD, champs invalides, JSON invalide, taille excessive, créations concurrentes et persistance après suppression/recréation des conteneurs. `scripts/smoke.sh` vérifie en plus la santé, les plafonds de ressources et SIGTERM.

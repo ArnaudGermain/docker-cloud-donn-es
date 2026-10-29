@@ -2,3 +2,7 @@
 node_modules/
 *.log
 *.tar
+
+__pycache__/
+back/data/*
+!back/data/.keep

@@ -22,7 +22,10 @@ services:
       retries: 5
       start_period: 5s
     environment:
-      HELLO_MESSAGE: "${HELLO_MESSAGE:-Bonjour depuis mon cloud Docker !}"
+      NOTES_FILE: /data/notes.json
+      MAX_NOTES: "${MAX_NOTES:-1000}"
+    volumes:
+      - notes-data:/data
     networks: [api]
   front:
     image: docker-cloud-front:1.0
@@ -87,3 +90,6 @@ networks:
     internal: true
   api:
     internal: true
+
+volumes:
+  notes-data: {}
