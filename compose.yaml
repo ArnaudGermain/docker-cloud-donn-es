@@ -1,29 +1,89 @@
 name: docker-cloud
 services:
   back:
-    image: docker-cloud-back:initial
+    image: docker-cloud-back:1.0
     build:
       context: .
       dockerfile: Dockerfile.back
+    pull_policy: build
+    command: ["--max-old-space-size=64", "--v8-pool-size=1", "back/server.js", "--port=8080"]
+    mem_limit: 128m
+    cpus: "0.50"
+    pids_limit: 64
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 12s
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/usr/bin/node", "--max-old-space-size=16", "/app/shared/healthcheck.js"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
     environment:
-      HELLO_MESSAGE: Bonjour depuis mon cloud Docker !
-
+      HELLO_MESSAGE: "${HELLO_MESSAGE:-Bonjour depuis mon cloud Docker !}"
+    networks: [api]
   front:
-    image: docker-cloud-front:initial
+    image: docker-cloud-front:1.0
     build:
       context: .
       dockerfile: Dockerfile.front
-
+    pull_policy: build
+    command: ["--max-old-space-size=40", "--v8-pool-size=1", "front/server.js", "--port=8080"]
+    mem_limit: 128m
+    cpus: "0.25"
+    pids_limit: 64
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 12s
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/usr/bin/node", "--max-old-space-size=16", "/app/shared/healthcheck.js"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    depends_on:
+      back:
+        condition: service_healthy
+    networks: [ui]
   web:
-    image: docker-cloud-web:initial
+    image: docker-cloud-web:1.0
     build:
       context: .
       dockerfile: Dockerfile.web
+    pull_policy: build
+    command: ["--max-old-space-size=96", "--v8-pool-size=1", "web/server.js", "--port=8080"]
+    mem_limit: 192m
+    cpus: "0.50"
+    pids_limit: 64
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 12s
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/usr/bin/node", "--max-old-space-size=16", "/app/shared/healthcheck.js"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
     environment:
       FRONT_URL: http://front:8080
       BACK_URL: http://back:8080
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${HTTP_PORT:-8080}:8080"
     depends_on:
-      - front
-      - back
+      front:
+        condition: service_healthy
+      back:
+        condition: service_healthy
+    networks: [edge, ui, api]
+networks:
+  edge: {}
+  ui:
+    internal: true
+  api:
+    internal: true

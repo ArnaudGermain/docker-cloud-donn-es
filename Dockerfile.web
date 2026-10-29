@@ -1,8 +1,11 @@
+# Node.js provient du registre Chainguard, sans Docker Hub.
 FROM cgr.dev/chainguard/node:latest@sha256:1ae8ed719c65888716078a52ce2166767e091f0b1072a79f6b42becba6e1ad44
 WORKDIR /app
-COPY shared ./shared
-COPY web ./web
+ENV NODE_ENV=production
+COPY --chown=65532:65532 shared ./shared
+COPY --chown=65532:65532 web ./web
 USER 65532:65532
 EXPOSE 8080
+STOPSIGNAL SIGTERM
 ENTRYPOINT ["/usr/bin/node"]
-CMD ["web/server.js"]
+CMD ["--max-old-space-size=64", "--v8-pool-size=1", "web/server.js", "--port=8080"]
