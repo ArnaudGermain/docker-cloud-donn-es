@@ -1,0 +1,8 @@
+FROM cgr.dev/chainguard/node:latest@sha256:1ae8ed719c65888716078a52ce2166767e091f0b1072a79f6b42becba6e1ad44
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --chown=65532:65532 ci/tests.js ./ci/tests.js
+USER 65532:65532
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["/usr/bin/node"]
+CMD ["--max-old-space-size=64", "--v8-pool-size=1", "ci/tests.js"]

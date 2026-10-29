@@ -11,3 +11,14 @@ Exécutée sur Docker Desktop avec deux projets isolés, sans utiliser le volume
 - Navigateur : création d’une note depuis le formulaire, modification du statut vers Terminé et filtrage À faire vérifiés. Aucun test de charge soutenue ni test sur appareil mobile physique n’a été effectué.
 
 Les seules notes utilisées sont des données fictives de test. La sauvegarde JSON vise un back unique ; pas d’écriture partagée entre plusieurs réplicas. L’application est une démonstration locale sans authentification.
+
+
+## Validation des deux conteneurs CI
+
+- `docker compose --profile ci config --quiet` et `git diff --check` : succès.
+- `sh scripts/ci.sh` : images lint/tests construites depuis Chainguard, lint réussi, services sains, tests HTTP réussis puis arrêt/nettoyage des conteneurs de la stack isolée `chantier-ci`.
+- Fichier JavaScript volontairement invalide monté depuis un dossier temporaire dans lint : erreur de syntaxe détectée et code de sortie 1. Les sources du projet n’ont pas été modifiées par ce test.
+- Tests lancés avec une URL locale inaccessible : code de sortie 1, donc un échec ne passe pas silencieusement.
+- Le pipeline couvre page, CRUD, statuts, validation, taille de requête et créations concurrentes. La persistance après recréation reste couverte par le test hôte décrit précédemment.
+
+Aucun push ni commit de ces ajouts CI n’a été effectué pendant cette préparation.

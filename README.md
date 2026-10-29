@@ -122,7 +122,7 @@ L’archive `../docker-cloud-images.tar` contient les images exportées de la pl
 ```sh
 docker load -i ../docker-cloud-images.tar
 # Pour régénérer :
-docker save -o ../docker-cloud-images.tar docker-cloud-front:1.0 docker-cloud-back:1.0 docker-cloud-web:1.0
+docker save -o ../docker-cloud-images.tar docker-cloud-front:1.0 docker-cloud-back:1.0 docker-cloud-web:1.0 docker-cloud-lint:1.0 docker-cloud-tests:1.0
 ```
 
 ## Remise Git
@@ -194,3 +194,56 @@ docker compose -p chantier-integration down
 ```
 
 Le test vérifie CRUD, champs invalides, JSON invalide, taille excessive, créations concurrentes et persistance après suppression/recréation des conteneurs. `scripts/smoke.sh` vérifie en plus la santé, les plafonds de ressources et SIGTERM.
+
+
+## Deux conteneurs supplémentaires de CI/CD
+
+La consigne supplémentaire est couverte par **lint** et **tests**, deux images personnalisées séparées. Ils sont activés avec le profil Compose `ci` et sortent avec code 0 en cas de réussite, 1 en cas d’échec. Ils ne restent pas en service et ne publient aucun port. Il s’agit d’un pipeline de validation CI local, sans déploiement automatique.
+
+### Exécuter le pipeline complet
+
+```sh
+sh scripts/ci.sh
+```
+
+Le script construit les images CI, lance le lint, démarre les services applicatifs et attend leur santé, puis lance les tests. Un échec arrête la séquence et retourne un code non nul. Le projet Compose est isolé sous le nom `chantier-ci`, avec son propre volume de notes et le port hôte 18082 (`CI_HTTP_PORT` permet de le changer). À la fin, les conteneurs sont supprimés ; le volume reste conservé. Le script ne monte pas le socket Docker dans un conteneur. Le pilote shell utilise uniquement Docker sur l’hôte ; le lint et les tests s’exécutent dans leurs conteneurs dédiés.
+
+Pour lancer les services séparément sur la stack courante :
+
+```sh
+docker compose --profile ci build lint tests
+docker compose --profile ci run --rm --no-deps lint
+docker compose --profile ci up -d --wait web
+docker compose --profile ci run --rm tests
+```
+
+`tests` attend un `lint` terminé avec succès et un `web` sain via `depends_on`. Le script CI lance ces étapes explicitement et utilise `--no-deps` sur les jobs pour éviter de les démarrer deux fois. Le démarrage ordinaire avec `docker compose up -d` ne lance pas les jobs CI.
+
+### Images, dépendances et arguments
+
+Les deux Dockerfiles utilisent la même base Node de Chainguard figée par digest que l’application : zéro image depuis Docker Hub. Chaque image copie nos scripts, utilise `/app`, un UID non root et l’entrypoint exec `/usr/bin/node`. Aucun paquet OS ou npm n’est installé. Les nouveaux modules utilisés sont intégrés à Node : `node:child_process` pour lancer les contrôles syntaxiques, `node:assert/strict` pour les assertions de test et `node:crypto` pour les identifiants des données de test. `fetch` est intégré à Node.
+
+| Conteneur | Fonction | RAM | CPU | Arguments et configuration |
+|---|---|---:|---:|---|
+| lint | Syntaxe des scripts JS et du JavaScript dans le HTML ; espaces de fin de ligne, saut de ligne final et marqueurs de conflits Git | 192 Mio | 0,50 CPU | `--max-old-space-size=64 --v8-pool-size=1 ci/lint.js` |
+| tests | Requêtes HTTP à travers le proxy : page, CRUD des notes, statuts, erreurs et créations concurrentes | 128 Mio | 0,50 CPU | `--max-old-space-size=64 --v8-pool-size=1 ci/tests.js` ; `TEST_BASE_URL=http://web:8080` |
+
+Le lint est un vérificateur personnalisé minimal : il ne prétend pas appliquer toutes les règles d’ESLint. Il contrôle effectivement les erreurs de syntaxe avec `node --check`, y compris le JavaScript inline, et applique ses règles de propreté. Ses processus Node enfants sont séquentiels ; la marge de RAM inclut le processus fils. Une faute doit faire échouer le job, pas seulement produire un avertissement.
+
+Les tests utilisent un nom de chantier unique et nettoient uniquement les notes qu’ils ont créées ; ils n’exigent pas une liste vide et ne suppriment pas les notes existantes. Les tests de persistance après recréation des conteneurs restent couverts par `scripts/test-notes.py`, piloté depuis l’hôte, car un job de tests n’a volontairement pas accès au moteur Docker.
+
+Les deux conteneurs ont un plafond de 64 tâches Linux, un système de fichiers en lecture seule et aucun privilège Linux supplémentaire. Le lint n’a aucun réseau ; tests rejoint seulement `edge` pour appeler web. Les scripts gèrent SIGTERM en interrompant le travail avec un code non nul ; ce ne sont pas des démons à redémarrer. Le délai Compose est de 12 s.
+
+### Communications CI
+
+```mermaid
+flowchart LR
+  driver[Script CI sur l’hôte] --> lint[Conteneur lint — sans réseau]
+  lint -. succès .-> tests[Conteneur tests]
+  tests -->|réseau edge / HTTP| web[Reverse proxy web]
+  web -->|réseau ui| front[Front]
+  web -->|réseau api| back[Back]
+  back --> volume[Volume notes-data]
+```
+
+**Choix par rapport au scaling :** le barème autorise deux services parmi scaling, lint et tests ; ce projet retient lint et tests. Le back sauvegarde un fichier JSON et doit rester en une seule instance. Un vrai scaling horizontal du back demanderait d’abord un stockage partagé adapté et une gestion des écritures concurrentes entre processus.

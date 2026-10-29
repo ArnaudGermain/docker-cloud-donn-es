@@ -84,6 +84,45 @@ services:
       back:
         condition: service_healthy
     networks: [edge, ui, api]
+  lint:
+    profiles: [ci]
+    image: docker-cloud-lint:1.0
+    build:
+      context: .
+      dockerfile: Dockerfile.lint
+    command: ["--max-old-space-size=64", "--v8-pool-size=1", "ci/lint.js"]
+    mem_limit: 192m
+    cpus: "0.50"
+    pids_limit: 64
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    network_mode: none
+    stop_grace_period: 12s
+    restart: "no"
+  tests:
+    profiles: [ci]
+    image: docker-cloud-tests:1.0
+    build:
+      context: .
+      dockerfile: Dockerfile.tests
+    command: ["--max-old-space-size=64", "--v8-pool-size=1", "ci/tests.js"]
+    mem_limit: 128m
+    cpus: "0.50"
+    pids_limit: 64
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 12s
+    restart: "no"
+    environment:
+      TEST_BASE_URL: http://web:8080
+    depends_on:
+      lint:
+        condition: service_completed_successfully
+      web:
+        condition: service_healthy
+    networks: [edge]
 networks:
   edge: {}
   ui:
